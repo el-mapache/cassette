@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html>
+ <head>
+  <script src="/moment.js"></script>
+    <script src="/recorder.js"></script>
+    <script>
+      (function(root) {
+        var P = PERSISTENT;
+        var T = TEMPORARY;
+        var MB = 1024 * 1024;
+
+        function onError(e) {
+          var msg = '';
+
+          switch (e.code) {
+            case FileError.QUOTA_EXCEEDED_ERR:
+              msg = 'File system full.';
+              break;
+            case FileError.NOT_FOUND_ERR:
+              msg = 'The requested file cant\'t be located.';
+              break;
+            case FileError.SECURITY_ERR:
+              msg = 'SECURITY_ERR';
+              break;
+            case FileError.INVALID_MODIFICATION_ERR:
+              msg = 'INVALID_MODIFICATION_ERR';
+              break;
+            case FileError.INVALID_STATE_ERR:
+              msg = 'INVALID_STATE_ERR';
+              break;
+            default:
+              msg = 'Unknown Error';
+              break;
+          }
+          console.log(msg);
+        }
+        
+        root.FileSystem = root.FileSystem || function() {};
+
+        root.FileSystem = FileSystem = function(opts) {
+          this.fs = null; 
+          // these are audio files, so lets just request a ton of space
+          this.bytes = ((opts && opts.storage) || 4000) * MB;
+          // Currently open file
+          this.file = null;
+          this.persistentStorage = window.navigator.webkitPersistentStorage;
+          this.allocate();
+        }
+        
+        // function is a noop after the initial allocation request
+        FileSystem.prototype.allocate = function() {
+          var self = this;
+          webkitStorageInfo.requestQuota(PERSISTENT, this.bytes, function(bytes) {
+            webkitRequestFileSystem(PERSISTENT, bytes, self.onFsInit.bind(self, arguments), onError);
+          },onError);
+        };
+
+        FileSystem.prototype.onFsInit = function(args, fileSys) {
+          console.log("File system sandbox accessed.");
+          this.fs = fileSys;
+          this.availableStorage();
+          // delete the temp file everytime the app starts
+          this.removeFile("test.wav");
+        };
+
+        FileSystem.prototype.availableStorage = function() {
+          function currentAndTotalStorage(used, allocated) {
+            console.log(used / MB + " MB used.");
+            console.log(allocated / MB + " MB total space remaining.");
+          }
+
+          this.persistentStorage.queryUsageAndQuota(currentAndTotalStorage);
+        };
+
+       FileSystem.prototype.removeFile = function(filename) { 
+         this.fs.root.getFile(filename, {create: false}, function(fileEntry) {
+           fileEntry.remove(function() {
+             console.log('File removed.');
+           }, onError);
+         }, onError);
+       };
+
+       FileSystem.prototype.readChunk = function(from, to, cb) {
+         if(arguments.length < 3) throw new Error("Invalid arguments.");
+         if(typeof cb !== "function") throw new Error("readChunk require a callback function");
+
+         this.file.file(function(file) {
+           var reader = new FileReader();
+           reader.onload = function(e) {
+             cb(e.target.result);
+           };
+           reader.readAsArrayBuffer(file.slice(from, to));
+         });
+       } 
+
+        // Explicitly returns a reference to the currently open file
+        // Not sure if chaining is actually necessary/useful though
+       FileSystem.prototype.findOrCreateFile = function(filename, cb) {
+         var self = this;
+         var fs = this.fs;
+         if(this.file) return this.file;
+         this.fs.root.getFile(filename, {create: true, exclusive: true}, function(fileEntry) {
+           console.log('File created');
+           self.file = fileEntry
+           if(typeof cb === "function") cb()
+         }, function(e) {
+           if(e.code === 9) {
+             console.log('file exists, opening..')
+             console.log(fs)
+             fs.root.getFile(filename, {}, function(entry) {
+               self.file = entry;
+             },onError);
+           }
+         });
+         return this.file;
+       };
+      
+       FileSystem.prototype.getResourceURL = function() {
+         return this.file.toURL();
+       };
+
+       FileSystem.prototype.writeFile = function(content, type, cb, position) {
+         if(!this.file) throw new Error("No file to write to.");
+         if(!content instanceof Blob) throw new Error("Content must be an instance of Blob.");
+
+         this.file.createWriter(function(writer) {
+           writer.onwriteend = function() {
+             console.log('File written');
+             console.log(arguments)
+           }; 
+
+           writer.onerror = function(e) {
+             console.log("Write failed: " + e.toString());
+             console.log(e);
+           };
+
+           if(type.toLowerCase() === "a") 
+             writer.seek(typeof position !== "undefined" || writer.length);
+           writer.write(content);
+
+           if(typeof cb === "function") cb()
+         }, onError);
+       };
+       return FileSystem;
+      })(window);
+     var fs = new FileSystem();
+   </script>
+ </head>
+ <body>
+    
+  <audio controls autoplay></audio>
+  <input id='range' type="range" min="-1" max="1" step="0.1">
+  <input onclick="startRecording()" type="button" value="start recording" />
+  <input id='stop' type="button" value="stop recording and play" />
+  <a href="#" onclick="recorder.pause()">pause</a>
+  
+  <script>
+   var recorder,
+     audio = document.querySelector('audio'),
+     stop = document.getElementById('stop'),
+     stream = null,
+     context = new webkitAudioContext(),
+     interval,
+     totalSize = 0;
+      
+   initializeUserMedia();
+     
+   function initializeUserMedia() {
+    window.URL = window.URL || window.webkitURL; 
+    navigator.getUserMedia  = navigator.webkitGetUserMedia || navigator.mozGetUserMedia;
+   }
+   
+
+  document.getElementById('range').onchange = function(e) {
+   recorder.gain(e);
+  }
+
+  stop.onclick = stopRecording;
+  
+  function logger(action) {
+    var date = ['[TIME]',moment().format()].join('::'),
+        logged = ['[ACTION]',action].join("::");
+   
+    console.log([date,logged].join('----'));
+  }
+  
+   
+  function onErr(error) {
+   logger("permission denied");
+   console.log(error);
+  }
+
+  function onSuccess(stream) {
+    mediaStreamSource = context.createMediaStreamSource(stream);
+    recorder = new Recorder(mediaStreamSource);
+    fs.findOrCreateFile("test.wav", function() {
+      recorder.writeHeaders(function(view) {
+        fs.writeFile(new Blob([view], {type: "audio/wav"}), 'w');
+      });
+    });
+
+    recorder.record();
+    interval = setInterval(function() { 
+      recorder.drain(function(payload) {
+        totalSize += payload.size;
+        fs.writeFile(payload.blob, "a", null)
+      });
+     },4000);
+     logger("recording started");
+   }
+
+   function startRecording() {
+    logger("permissions dialog");
+    navigator.getUserMedia({video: false, audio: true}, onSuccess, onErr);
+   }
+
+   function stopRecording() {
+    logger("recording stopped"); 
+
+    recorder.stop();
+    clearInterval(interval);
+
+    logger('calling export')
+
+    recorder.drain(function(payload) {
+      fs.writeFile(payload.blob, "a", function() {
+        totalSize += payload.size;
+        fs.readChunk(0, 44, function(buffer) {
+          var view = new DataView(buffer);
+          view.setUint32(4,36 + totalSize, true);
+          view.setUint32(40, totalSize, true);
+
+          fs.writeFile(new Blob([view], {type: 'audio/wav'}),"",function() {
+            var a = document.createElement('a');
+            a.href = fs.getResourceURL();
+            a.innerHTML = "CLICKME";
+            document.body.appendChild(a);
+          });
+        });
+      });
+    });
+
+    /*recorder.exportWAV(function(stream) {
+      audio.src = window.URL.createObjectURL(stream);
+      Recorder.forceDownload(stream);
+        });*/
+   }
+  </script>
+ </body>
+</html>
