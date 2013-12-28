@@ -16,36 +16,6 @@ app.get('/', function(req, res){
 });
 
 
-
-
-// create the server
-var BinaryServer = require('binaryjs').BinaryServer;
-
-// Start Binary.js server
-var bs = BinaryServer({server: server});
-// Wait for new user connections
-bs.on('connection', function(client){
-  console.log('connected');
-  client.on('error',function() {
-    console.log('error')
-    console.log(arguments);
-  });
-  client.on('client:ready',function() {
-    console.log('client signal')
-    client.send('server:ready');
-  });
-  client.on('stream', function(stream, meta){
-    console.log('steraming');
-    console.log(meta)
-    var file = fs.createWriteStream(__dirname + '/public/' + meta.name);
-    stream.pipe(file);
-  
-    stream.on('data',function(data) {
-      stream.write({rx: data.length / meta.size});
-    });
-  });
-});
-
 server.listen(1337, function() {
   console.log((new Date()) + " Server is listening on port 1337");
 });

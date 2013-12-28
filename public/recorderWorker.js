@@ -1,3 +1,6 @@
+/* Adapted from Matt Diamond's recorder.js
+ * changes by adam biagianti/el-mapache 2013
+**/
 var recLength = 0,
     recBuffersL = [],
     recBuffersR = [],
@@ -47,12 +50,13 @@ function record(inputBuffer){
 // Remove all samples form the buffer and convert data to 16bit int.
 // Naive and not threadsafe
 function drain() {
-  var samples = mergeBuffers(recBuffersL.splice(0,recBuffersL.length), recLength),
+  var samples = mergeBuffers(recBuffersL.splice(0, recBuffersL.length), recLength),
       buffSize = samples.length * 2,
       view = new DataView(new ArrayBuffer(buffSize));
 
   recLength = 0;
   floatTo16BitPCM(view, 0, samples);
+
   this.postMessage({
     payload: {
       blob: new Blob([view]),
@@ -70,14 +74,14 @@ function exportWAV(type) {
   if(numChannels === 2) {
     var bufferR = mergeBuffers(recBuffersR, recLength),
     interleaved = interleave(bufferL, bufferR);
- }
- 
- clear();
- dataview = encodeWAV(interleaved ? interleaved : bufferL),
- this.postMessage({
-   payload:  new Blob([dataview], { type: type }),
-   type: "object"
- });
+  }
+
+  clear();
+  dataview = encodeWAV(interleaved ? interleaved : bufferL),
+  this.postMessage({
+    payload: new Blob([dataview], { type: type }),
+    type: "object"
+  });
 }
 
 function getBuffer() {
@@ -114,9 +118,9 @@ function mergeBuffers(recBuffers, recLength) {
 // Two discreet inputs become a single stereo track
 function interleave(inputL, inputR){
   var length = inputL.length + inputR.length,
-    result = new Float32Array(length),
-   index = 0,
-     inputIndex = 0;
+      result = new Float32Array(length),
+      index = 0,
+      inputIndex = 0;
 
   while (index < length){
     result[index++] = inputL[inputIndex];
@@ -130,7 +134,7 @@ function interleave(inputL, inputR){
 function floatTo16BitPCM(output, offset, input){
   var i = 0,
       length = input.length;
-   
+ 
   for (i; i < length; ++i, offset+=2){
     var s = Math.max(-1, Math.min(1, input[i]));
     output.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
@@ -260,77 +264,7 @@ function writeHeaders() {
   view.setUint16(34, 16, true);
   writeString(view, 36, 'data');
   view.setUint32(40, length * 2, true);
+
   this.postMessage({payload: view, type: "object"});
 }
 
-// this.pipe = function() {
-//  var c = recLength;
-//  var end = recBuffersL.end;
-//  if(end < recBuffersL.start) {
-//   var move = ((recBuffersL.length - 1) - recBuffersL.start) + end; 
-//  } else {
-//   var move = end - recBuffersL.start;
-//  }
-//  view = new Uint16Array(44 + c * 2);
-//  var i = 0;
-//  var j = 0;
-//  var offset = 44;
-// 
-//  for(i;i < move; i++) {
-//   var that = recBuffersL.read();
-//   for(j; j<256;j++,offset+=2) {
-//    var s = Math.max(-1, Math.min(1, that[j]));
-//    view[offset] = s < 0 ? s * 0x8000 : s * 0x7FFF;
-//   }
-//  }
-// };
-
-/* THIS VERSION CALLED FROM CIRCULAR BUFFER OUTPUT */
-// function floatTo16BitPCM(output, offset, input){
-//  var i = 0,
-//    length = input.length;
-//    
-//   for (i; i < length; i++, offset+=2){
-//     var s = Math.max(-1, Math.min(1, input[i]));
-//     output[offset] =  s < 0 ? s * 0x8000 : s * 0x7FFF;
-//   }
-// };
- // if(itr !== 1) {
- //  view = copy();
- //   offset = view.length;
- // } else {
- //   view = new Uint16Array(44 + recLength * 2);
- //   offset = 44;
- // }
- //   //position to set each array of floats
- //   var offset = snapshotTime;
- //   // current length of samples we need to allocate for our buffer
- //   snapshotTime = recLength - snapshotTime;
- //   // allocated buffer
- //   var buffer = new Float32Array(snapshotTime);
- //   //
- //   while(offset < snapshotTime) {
- //     var toSet = recBuffersL.read();
- //   //  console.log(this.cb.start)
- //   //  console.log(offset)
- //     buffer.set(toSet,offset);
- //     offset += toSet.length
- //   }
-
-  //empty the temp buffer
-//  buffer = null;
-//};
-
-// function copy(buffer) {
-//   // make a new array buffer of 2 seconds times the number of buffers created
-//   var u16 = new Uint16Array(44 + total);
-//   var offset = 44;
-//   var oldLen = view.length;
-//   this.postMessage(oldLen);
-//   // copy the relevent PCM data
-//   for(var i = 0; i < oldLen;i++,offset += 2) {
-//     u16[offset] = view[i];
-//   } 
-// 
-//   return u16;  
-// }

@@ -1,7 +1,10 @@
+/* Adapted from Matt Diamond recorder.js
+ * changes by adam biagianti/el-mapache 2013
+**/
 (function(window) {
 
   var WORKER_PATH = 'recorderWorker.js';
-//looks like 5 mb per minute
+ //looks like 5 mb per minute
  var Recorder = function(source, options){
    var config = options || {},
    bufferLen = config.bufferLen || 256,
@@ -57,10 +60,12 @@
       var payload = e.data.payload;
       console.log('message called');
       console.log('data being passed back below!!!');
-      if(e.data.type === "object")
+
+      if(e.data.type === "object") {
         currCallback(payload);
-      else
+      } else {
         console.log(payload);
+      }
     }
   };  
 
