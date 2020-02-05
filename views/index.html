@@ -1,0 +1,137 @@
+<!-- copyright (c) Adam Biagianti/el-mapache 2013. -->
+<!DOCTYPE html>
+<html>
+ <head>
+  <script src="/moment.js"></script>
+  <script src="/recorder.js"></script>
+  <script src="/filesystem.js"></script>
+  <script src="/audio-context.js"></script>
+  <script>
+    var fs = new FileSystem({
+      debug: true,
+      callback: function() {
+        console.log('Filesystem access granted.')
+        fs.readDir(fs.fs, function(result) {
+          console.log('Existing files:', result);
+        });
+      }
+    });
+  </script>
+ </head>
+ <body>
+  <ul id="filelist"></ul>   
+  <audio controls autoplay></audio>
+  <input id='range' type="range" min="-1" max="1" step="0.1">
+  <input onclick="startRecording()" type="button" value="start recording" />
+  <input id='stop' type="button" value="stop recording and play" />
+  <a href="#" onclick="recorder.pause()">pause</a>
+
+  <script>
+    var recorder,
+      audio = document.querySelector('audio'),
+      stop = document.getElementById('stop'),
+      stream = null,
+      context = BrowserRecorder.getAudioContext(),
+      interval,
+      totalSize = 0;
+
+    initializeUserMedia();
+
+    function initializeUserMedia() {
+      window.URL = window.URL || window.webkitURL;
+      
+      if (typeof navigator.mediaDevices === 'undefined') {
+        navigator.mediaDevices = {};
+      }
+
+      if (!('getUserMedia' in navigator.mediaDevices)) {
+        const safeGet = navigator.webkitGetUserMedia || navigator.getUserMedia;
+        const promisedUserMedia = (constraints, onSuccess, onError) =>
+          new Promise((resolve, reject) => {
+            safeGet.call(navigator, constraints, onSuccess, onError);
+          });
+
+        navigator.mediaDevices.getUserMedia = promisedUserMedia
+      }
+    }
+    
+
+    document.getElementById('range').onchange = function(e) {
+      recorder.gain(e);
+    };
+
+    stop.onclick = stopRecording;
+    
+    function logger(action) {
+      var date = ['[TIME]',moment().format()].join('::'),
+          logged = ['[ACTION]',action].join("::");
+    
+      console.log([date,logged].join('----'));
+    }
+    
+    
+    function onErr(error) {
+      logger("permission denied");
+      console.log(error);
+    }
+
+    function onSuccess(stream) {
+      mediaStreamSource = context.createMediaStreamSource(stream);
+      recorder = new Recorder(mediaStreamSource);
+      fs.findOrCreateFile("test_"+ +new Date + ".wav", function(file) {
+        recorder.writeHeaders(function(view) {
+          fs.writeFile(new Blob([view], {type: "audio/wav"}), 'w', 0);
+        });
+      });
+
+      recorder.record();
+      interval = setInterval(function() { 
+        recorder.drain(function(payload) {
+          totalSize += payload.size;
+          fs.writeFile(payload.blob, "a", null)
+        });
+      },4000);
+      logger("recording started");
+    }
+
+    function startRecording() {
+      logger("Begin requeseting permissions dialog");
+
+      navigator.mediaDevices.getUserMedia({ audio: true })
+        .then(onSuccess, onErr);
+    }
+
+    function stopRecording() {
+      logger("recording stopped"); 
+
+      recorder.stop();
+      clearInterval(interval);
+
+      logger('calling export')
+
+      recorder.drain(function(payload) {
+        fs.writeFile(payload.blob, "a", function() {
+          totalSize += payload.size;
+          fs.readChunk(0, 44, function(buffer) {
+            // Make a new dataview to manipulate the returned ArrayBuffer
+            var view = new DataView(buffer);
+            // Overwrite the temporary total size bytes with the actual size of the file
+            view.setUint32(4,36 + totalSize, true);
+            view.setUint32(40, totalSize, true);
+
+            fs.writeFile(new Blob([view], {type: 'audio/wav'}),"",function() {
+              var a = document.createElement('a'),
+                  url = fs.getResourceURL();
+
+              a.href = url;
+              audio.src = url;
+              a.innerHTML = "CLICKME";
+              document.body.appendChild(a);
+            });
+          });
+        });
+      });
+    }
+  </script>
+ </body>
+</html>

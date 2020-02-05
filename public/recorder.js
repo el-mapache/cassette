@@ -4,7 +4,7 @@
 (function(window) {
 
   var WORKER_PATH = 'recorderWorker.js';
- //looks like 5 mb per minute
+ // looks like 5 mb per minute
  var Recorder = function(source, options){
    var config = options || {},
    bufferLen = config.bufferLen || 256,
@@ -24,8 +24,8 @@
    this.snapshotTime = 0;
 
    //create with buffer length, and input and output channels
-   this.node = this.context.createJavaScriptNode(bufferLen, 1, 1);
-   this.volume = this.context.createGainNode();
+   this.node = this.context.createScriptProcessor(bufferLen, 1, 1);
+   this.volume = this.context.createGain();
 
    //connect our source to the buffer, then to the output
    this.source.connect(this.node);
@@ -41,7 +41,9 @@
     });
   
     this.node.onaudioprocess = function(e){
-      if(!recording) return;
+      if (!recording) {
+        return;
+      }
    // if(numChannels === 2) 
    //  buffer = [e.inputBuffer.getChannelData(0), e.inputBuffer.getChannelData(1)];
    // else
@@ -159,10 +161,7 @@
     link.download = filename || 'output.wav';
     link.id = "download";
     link.innerHTML = "click here to download";
-    document.querySelector('body').appendChild(link)
-    // var click = document.createEvent("Event");
-    //    click.initEvent("click", true, true);
-    //    link.dispatchEvent(click);
+    document.querySelector('body').appendChild(link);
   }
 
   window.Recorder = Recorder;
